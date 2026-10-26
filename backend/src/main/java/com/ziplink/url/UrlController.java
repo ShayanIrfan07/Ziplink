@@ -1,0 +1,120 @@
+package com.ziplink.url;
+
+import java.net.URI;
+import java.util.UUID;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import com.ziplink.common.exception.ApiException;
+import com.ziplink.guest.Guest;
+import com.ziplink.guest.GuestService;
+import com.ziplink.url.click.ClickRecorder;
+import com.ziplink.url.click.ClientSignals;
+import com.ziplink.url.dto.CreateUrlRequest;
+import com.ziplink.url.dto.PageResponse;
+import com.ziplink.url.dto.UpdateUrlRequest;
+import com.ziplink.url.dto.UrlResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@RestController
+public class UrlController {
+
+	private static final Logger log = LoggerFactory.getLogger(UrlController.class);
+
+	private final UrlService urls;
+	private final GuestService guests;
+	private final ClickRecorder clicks;
+
+	public UrlController(UrlService urls, GuestService guests, ClickRecorder clicks) {
+		this.urls = urls;
+		this.guests = guests;
+		this.clicks = clicks;
+	}
+
+	@PostMapping("/api/v1/urls")
+	public ResponseEntity<UrlResponse> create(
+			@Valid @RequestBody CreateUrlRequest request,
+			HttpServletRequest httpRequest,
+			HttpServletResponse httpResponse) {
+		Guest guest = guests.resolveOrCreate(httpRequest, httpResponse);
+		UrlResponse created = urls.create(guest, request, clientKey(httpRequest));
+		return ResponseEntity.created(URI.create("/api/v1/urls/" + created.id())).body(created);
+	}
+
+	@GetMapping("/api/v1/urls")
+	public PageResponse<UrlResponse> list(
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size,
+			@RequestParam(defaultValue = "createdAt,desc") String sort,
+			@RequestParam(required = false) String q,
+			HttpServletRequest request) {
+		return urls.list(guests.find(request).orElse(null), page, size, sort, q);
+	}
+
+	@GetMapping("/api/v1/urls/{id}")
+	public UrlResponse get(@PathVariable UUID id, HttpServletRequest request) {
+		return urls.get(requireGuest(request), id);
+	}
+
+	@PatchMapping("/api/v1/urls/{id}")
+	public UrlResponse update(
+			@PathVariable UUID id,
+			@RequestBody UpdateUrlRequest requestBody,
+			HttpServletRequest request) {
+		return urls.update(requireGuest(request), id, requestBody);
+	}
+
+	@DeleteMapping("/api/v1/urls/{id}")
+	public ResponseEntity<Void> delete(@PathVariable UUID id, HttpServletRequest request) {
+		urls.delete(requireGuest(request), id);
+		return ResponseEntity.noContent().build();
+	}
+
+	/**
+	 * Temporary redirect. A 301 would be cached by browsers after the destination
+	 * or expiration changes. Analytics recording is separate and must not decide
+	 * whether the visitor is redirected.
+	 */
+	@GetMapping("/{shortCode:[A-Za-z0-9_-]{3,32}}")
+	public ResponseEntity<Void> redirect(@PathVariable String shortCode, HttpServletRequest request) {
+		RedirectTarget target = urls.resolve(shortCode);
+		try {
+			clicks.record(target.id(), signals(request));
+		} catch (RuntimeException exception) {
+			log.warn("Click recording was not scheduled for a successful redirect");
+		}
+		return ResponseEntity.status(HttpStatus.FOUND)
+				.location(URI.create(target.destination()))
+				.cacheControl(CacheControl.noStore())
+				.build();
+	}
+
+	private Guest requireGuest(HttpServletRequest request) {
+		return guests.find(request).orElseThrow(() -> ApiException.notFound("Link not found"));
+	}
+
+	private static String clientKey(HttpServletRequest request) {
+		String address = request.getRemoteAddr();
+		return address == null || address.isBlank() ? "unknown" : address;
+	}
+
+	private static ClientSignals signals(HttpServletRequest request) {
+		String purpose = request.getHeader("Purpose");
+		if (purpose == null) {
+			purpose = request.getHeader("Sec-Purpose");
+		}
+		return new ClientSignals(request.getHeader("User-Agent"), request.getHeader("Referer"), purpose);
+	}
+}
