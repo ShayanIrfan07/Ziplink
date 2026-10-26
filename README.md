@@ -2,22 +2,21 @@
 
 Short links. Smart insights.
 
-Ziplink turns a long `http` or `https` URL into a short link, stores it in PostgreSQL, and redirects visitors to the original destination. Links created in a browser stay with that browser until accounts arrive.
+Ziplink turns a long `http` or `https` URL into a short link, stores it in PostgreSQL, and redirects visitors to the original destination. An account keeps that library private. Without an account, links stay with the browser that created them.
 
 ## What works now
 
-This is the Phase 1 URL shortener:
-
-- Create a short link from the landing page.
-- Optional custom alias and expiration.
-- Copy or open the short link.
+- Create a short link from the landing page, with an optional alias and expiration.
+- Register, sign in, and sign out with an HTTP-only session cookie.
+- A signed-in dashboard with link totals, click totals, active and expired counts, top links, and recent clicks.
+- List, search, sort, disable, enable, and delete only the links that belong to the signed-in account.
+- Visitors who are not signed in can still create and manage links through the browser cookie.
 - Public redirect at `GET /{shortCode}`.
-- List, search, sort, disable, enable, and delete links owned by the current browser.
-- Click events are stored for later analytics. There is no analytics dashboard yet.
+- Click events are stored. The dashboard uses those stored events. There is no time-series chart yet.
 
 ## What is not built yet
 
-Registration, login, per-user dashboards, analytics charts, Redis caching, Kafka, and splitting the backend into separate services are later phases. Do not treat those as available.
+Analytics charts, Redis caching, Kafka, and splitting the backend into separate services are later phases. Do not treat those as available.
 
 ## Stack
 
@@ -31,8 +30,9 @@ Ziplink is a modular Spring Boot application plus a Next.js UI. The backend owns
 
 Important decisions for this phase:
 
-- **Ownership.** There are no user accounts yet. Creating a link sets an HTTP-only cookie, `ziplink_guest`, whose value is a random token. The database stores only the SHA-256 hash of that token. Listing, updating, and deleting require that cookie. A missing or foreign link returns 404, so one browser cannot read another browser's links. Anonymous creation is rate limited to 20 requests per minute per client address, in memory, for this single process.
-- **CSRF.** The guest cookie is a credential. Spring Security issues a readable `XSRF-TOKEN` cookie, and the frontend sends it back as `X-XSRF-TOKEN`. Cookies use `SameSite=Lax` and are marked `Secure` only when `COOKIE_SECURE=true`. There is no default username or password. HTTP basic and form login are disabled.
+- **Accounts.** Registration and login use BCrypt password hashes. The browser receives an HTTP-only `ziplink_session` cookie. The database stores only the SHA-256 hash of that token. A session lasts 14 days and is deleted on logout. Login and registration are limited to 10 attempts per minute per client address, in memory, for this single process. Failed login always returns the same message.
+- **Ownership.** A signed-in request creates and lists links by account id. A missing or foreign link returns 404. Signing up or signing in from a browser that already has guest links moves those links onto the account and clears the guest association, so a later account on the same browser does not inherit them. Without a session, the HTTP-only `ziplink_guest` cookie still scopes anonymous links. Anonymous creation is rate limited to 20 requests per minute per client address.
+- **CSRF.** Session and guest cookies are credentials. Spring Security issues a readable `XSRF-TOKEN` cookie, and the frontend sends it back as `X-XSRF-TOKEN`. Cookies use `SameSite=Lax` and are marked `Secure` only when `COOKIE_SECURE=true`. HTTP basic and form login are disabled. Passwords, session tokens, and password hashes are not written to logs.
 - **Redirects use 302.** Destinations, status, and expiration can change. A 301 would be cached by browsers after those changes. Redirect responses send `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 - **Destination safety.** Only `http` and `https` URLs are accepted. Other schemes, missing hosts, embedded credentials, and control characters are rejected. The backend does not fetch the destination. Redirecting to an address the creator supplied is the product; it is not an open redirect of an arbitrary `next` parameter.
 - **Clicks.** A click is a successful redirect. Missing, disabled, and expired links are not counted. Requests that look like bots, monitors, `curl`, or browser prefetch are not stored. The stored referrer keeps the scheme, host, and path, and drops the query string and fragment. Raw IP addresses and raw user-agent strings are not stored. The category is an approximate label derived from the user agent: desktop, mobile, tablet, or unknown. Recording runs after the redirect decision. If the recorder is busy or fails, the visitor is still redirected. This is not exactly-once delivery: a refresh counts as another click.
@@ -91,6 +91,8 @@ See `.env.example`. Local defaults in `backend/src/main/resources/application.ym
 | `PORT` | API port |
 | `FORWARD_HEADERS_STRATEGY` | Set `framework` when a trusted proxy terminates TLS. Leave `none` otherwise. The app does not trust `X-Forwarded-For` on its own. |
 | `CREATE_RATE_LIMIT_PER_MINUTE` | Anonymous create limit for one API process |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | Login and registration limit for one API process |
+| `SESSION_MAX_AGE_DAYS` | Session cookie lifetime |
 | `NEXT_PUBLIC_API_BASE_URL` | API origin used by the browser. This is public configuration, not a secret. |
 
 Set `COOKIE_SECURE=true` and an `https` public URL in production. Do not commit a real `.env`.
@@ -122,11 +124,16 @@ npm run build
 
 | Method | Path | Result |
 | --- | --- | --- |
-| `POST` | `/api/v1/urls` | `201` and the new link. Sets the guest cookie when needed. |
-| `GET` | `/api/v1/urls` | Page of links for the guest cookie. An empty page when the cookie is absent. |
+| `POST` | `/api/v1/auth/register` | `201` and the account. Sets the session cookie. `409` when the email is taken. |
+| `POST` | `/api/v1/auth/login` | `200` and the account. Sets the session cookie. `401` for a bad password. |
+| `POST` | `/api/v1/auth/logout` | `204`. Requires a session. Deletes that session. |
+| `GET` | `/api/v1/auth/me` | The signed-in account, or `401`. |
+| `GET` | `/api/v1/dashboard/summary` | Counts, top links, and recent clicks for the signed-in account, or `401`. |
+| `POST` | `/api/v1/urls` | `201` and the new link. Uses the session when present, otherwise the guest cookie. |
+| `GET` | `/api/v1/urls` | Page of links for the session, or for the guest cookie when signed out. |
 | `GET` | `/api/v1/urls/{id}` | One owned link, or `404`. |
 | `PATCH` | `/api/v1/urls/{id}` | Change destination, status, or expiration. |
-| `DELETE` | `/api/v1/urls/{id}` | `204` when the link belonged to the guest. |
+| `DELETE` | `/api/v1/urls/{id}` | `204` when the link belonged to the caller. |
 | `GET` | `/{shortCode}` | `302` when the link is active. `404` when it is missing or disabled. `410` when it is expired. |
 
 Unsafe requests need the CSRF header. Errors use `{ "code", "message", "fields", "timestamp", "path" }` and do not include stack traces. Page size is limited to 100. Sort fields are `createdAt`, `expiresAt`, and `shortCode`.

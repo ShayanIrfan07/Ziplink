@@ -1,3 +1,4 @@
+import type { DashboardSummary, User } from "@/types/account";
 import type { ApiErrorBody, PageResponse, UrlResponse, UrlStatus } from "@/types/url";
 
 export class ApiRequestError extends Error {
@@ -130,4 +131,31 @@ export function updateUrl(id: string, body: { status?: UrlStatus; originalUrl?: 
 
 export function deleteUrl(id: string) {
   return apiRequest<void>(`/api/v1/urls/${id}`, { method: "DELETE" });
+}
+
+export function registerAccount(body: { email: string; password: string }) {
+  return apiRequest<User>("/api/v1/auth/register", { method: "POST", body });
+}
+
+export function loginAccount(body: { email: string; password: string }) {
+  return apiRequest<User>("/api/v1/auth/login", { method: "POST", body });
+}
+
+export function logoutAccount() {
+  return apiRequest<void>("/api/v1/auth/logout", { method: "POST" });
+}
+
+export async function currentUser() {
+  try {
+    return await apiRequest<User>("/api/v1/auth/me");
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export function dashboardSummary() {
+  return apiRequest<DashboardSummary>("/api/v1/dashboard/summary");
 }

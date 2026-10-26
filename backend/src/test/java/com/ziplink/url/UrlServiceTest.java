@@ -59,7 +59,8 @@ class UrlServiceTest {
 						"http://localhost:8080",
 						List.of("http://localhost:3000"),
 						new ZiplinkProperties.Cookie("ziplink_guest", false, "Lax", 400),
-						new ZiplinkProperties.RateLimit(100),
+						new ZiplinkProperties.Session("ziplink_session", 14),
+						new ZiplinkProperties.RateLimit(100, 10),
 						false),
 				Clock.fixed(NOW, ZoneOffset.UTC),
 				new SimpleMeterRegistry());
@@ -124,6 +125,16 @@ class UrlServiceTest {
 	}
 
 	@Test
+	void hidesAnotherAccountLink() {
+		when(repository.findByIdAndOwnerId(any(), any())).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.get(LinkScope.user(UUID.randomUUID()), UUID.randomUUID()))
+				.isInstanceOfSatisfying(ApiException.class, error ->
+						assertThat(error.status()).isEqualTo(HttpStatus.NOT_FOUND));
+		verify(repository, never()).findByIdAndGuestId(any(), any());
+	}
+
+	@Test
 	void expiredLinksAreGoneAndDisabledLinksAreNotFound() {
 		ShortUrl expired = ShortUrl.create(
 				guest,
@@ -173,7 +184,7 @@ class UrlServiceTest {
 
 	@Test
 	void emptyGuestListDoesNotQuery() {
-		var page = service.list(null, 0, 20, "createdAt,desc", null);
+		var page = service.list((Guest) null, 0, 20, "createdAt,desc", null);
 
 		assertThat(page.totalElements()).isZero();
 		verify(repository, never()).findAll(any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class));

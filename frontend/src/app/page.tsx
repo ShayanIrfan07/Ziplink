@@ -57,7 +57,7 @@ export default function HomePage() {
           {[
             ["Paste a destination", "Ziplink accepts http and https URLs and rejects other schemes before anything is stored."],
             ["Share the short link", "You get a stable code. Open it, or copy it. The redirect does not wait on analytics work."],
-            ["Keep control", "Disable or delete a link when you are done. Accounts and charts are the next milestones, not this one."],
+            ["Keep control", "Sign in to keep a private library. Disable or delete a link when you are done."],
           ].map(([title, copy], index) => (
             <article key={title}>
               <p className="font-mono text-sm text-primary">0{index + 1}</p>
@@ -86,13 +86,13 @@ export default function HomePage() {
 
       <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:px-6">
         <div className="rounded-3xl bg-foreground px-6 py-10 text-background sm:px-10">
-          <h2 className="font-display text-4xl text-background">Create the first link in this browser</h2>
+          <h2 className="font-display text-4xl text-background">Keep the links with your account</h2>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-background/75">
-            Personal accounts are not part of this release. Until they are, Ziplink ties the links you create to an HTTP-only cookie so the management list stays private to this browser.
+            Create an account to see your own counts and links. Without one, a short link stays with this browser through an HTTP-only cookie.
           </p>
-          <a href="#shorten" className="mt-6 inline-flex h-11 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground">
-            Shorten a link
-          </a>
+          <Link href="/register" className="mt-6 inline-flex h-11 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground">
+            Create an account
+          </Link>
         </div>
       </section>
     </div>

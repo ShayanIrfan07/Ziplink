@@ -9,7 +9,7 @@ export default function LinksPage() {
           <p className="text-sm uppercase tracking-[0.16em] text-accent">Library</p>
           <h1 className="mt-2 font-display text-4xl tracking-tight">Your links</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Search, sort, and update the links created in this browser. Counts and charts will use recorded clicks in a later release.
+            Signed-in links stay with your account. Without an account, this list follows the browser cookie. Charts over time come later.
           </p>
         </div>
         <Link href="/#shorten" className="inline-flex h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground">

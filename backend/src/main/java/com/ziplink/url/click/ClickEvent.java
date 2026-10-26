@@ -53,6 +53,14 @@ public class ClickEvent {
 		return clientCategory;
 	}
 
+	public Instant getClickedAt() {
+		return clickedAt;
+	}
+
+	public ShortUrl getShortUrl() {
+		return shortUrl;
+	}
+
 	public String getReferrer() {
 		return referrer;
 	}

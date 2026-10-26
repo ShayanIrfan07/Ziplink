@@ -15,6 +15,7 @@ import com.ziplink.common.exception.ApiException;
 import com.ziplink.common.exception.ErrorCode;
 import com.ziplink.config.ZiplinkProperties;
 import com.ziplink.guest.Guest;
+import com.ziplink.identity.UserAccount;
 import com.ziplink.url.dto.CreateUrlRequest;
 import com.ziplink.url.dto.PageResponse;
 import com.ziplink.url.dto.UpdateUrlRequest;
@@ -61,6 +62,20 @@ public class UrlService {
 
 	@Transactional
 	public UrlResponse create(Guest guest, CreateUrlRequest request, String clientKey) {
+		return create(guest, null, request, clientKey);
+	}
+
+	@Transactional
+	public UrlResponse createForUser(UserAccount user, CreateUrlRequest request, String clientKey) {
+		return create(null, user, request, clientKey);
+	}
+
+	@Transactional
+	public int claimGuestLinks(UserAccount user, java.util.UUID guestId) {
+		return repository.claimGuestLinks(user, guestId, clock.instant());
+	}
+
+	private UrlResponse create(Guest guest, UserAccount user, CreateUrlRequest request, String clientKey) {
 		rateLimiter.acquire(clientKey);
 		String destination = destinations.validate(request.originalUrl());
 		Instant expiresAt = request.expiresAt();
@@ -83,6 +98,7 @@ public class UrlService {
 			try {
 				saved = writer.insert(ShortUrl.create(
 						guest,
+						user,
 						destination,
 						code,
 						normalizedAlias,
@@ -107,6 +123,11 @@ public class UrlService {
 
 	@Transactional(readOnly = true)
 	public PageResponse<UrlResponse> list(Guest guest, int page, int size, String sort, String query) {
+		return list(guest == null ? null : LinkScope.guest(guest.getId()), page, size, sort, query);
+	}
+
+	@Transactional(readOnly = true)
+	public PageResponse<UrlResponse> list(LinkScope scope, int page, int size, String sort, String query) {
 		if (page < 0) {
 			throw ApiException.validation("page", "Page must be zero or greater");
 		}
@@ -117,12 +138,13 @@ public class UrlService {
 			throw ApiException.validation("q", "Search text must be at most 200 characters");
 		}
 		Sort parsed = parseSort(sort);
-		if (guest == null) {
+		if (scope == null) {
 			return new PageResponse<>(java.util.List.of(), page, size, 0, 0);
 		}
-		Page<ShortUrl> result = repository.findAll(
-				ShortUrlSpecifications.ownedBy(guest.getId(), query),
-				PageRequest.of(page, size, parsed));
+		var specification = scope.userId() != null
+				? ShortUrlSpecifications.ownedByUser(scope.userId(), query)
+				: ShortUrlSpecifications.ownedBy(scope.guestId(), query);
+		Page<ShortUrl> result = repository.findAll(specification, PageRequest.of(page, size, parsed));
 		return new PageResponse<>(
 				result.stream().map(this::toResponse).toList(),
 				result.getNumber(),
@@ -133,12 +155,22 @@ public class UrlService {
 
 	@Transactional(readOnly = true)
 	public UrlResponse get(Guest guest, UUID id) {
-		return toResponse(owned(guest, id));
+		return get(LinkScope.guest(guest.getId()), id);
+	}
+
+	@Transactional(readOnly = true)
+	public UrlResponse get(LinkScope scope, UUID id) {
+		return toResponse(owned(scope, id));
 	}
 
 	@Transactional
 	public UrlResponse update(Guest guest, UUID id, UpdateUrlRequest request) {
-		ShortUrl url = owned(guest, id);
+		return update(LinkScope.guest(guest.getId()), id, request);
+	}
+
+	@Transactional
+	public UrlResponse update(LinkScope scope, UUID id, UpdateUrlRequest request) {
+		ShortUrl url = owned(scope, id);
 		Instant now = clock.instant();
 		if (request.originalUrl() != null) {
 			url.changeDestination(destinations.validate(request.originalUrl()), now);
@@ -158,7 +190,17 @@ public class UrlService {
 
 	@Transactional
 	public void delete(Guest guest, UUID id) {
-		repository.delete(owned(guest, id));
+		delete(LinkScope.guest(guest.getId()), id);
+	}
+
+	@Transactional
+	public void delete(LinkScope scope, UUID id) {
+		repository.delete(owned(scope, id));
+	}
+
+	@Transactional(readOnly = true)
+	public java.util.List<UrlResponse> recentForOwner(UUID userId) {
+		return repository.findTop5ByOwnerIdOrderByCreatedAtDesc(userId).stream().map(this::toResponse).toList();
 	}
 
 	/**
@@ -179,8 +221,12 @@ public class UrlService {
 		return new RedirectTarget(url.getId(), url.getOriginalUrl());
 	}
 
-	private ShortUrl owned(Guest guest, UUID id) {
-		return repository.findByIdAndGuestId(id, guest.getId())
+	private ShortUrl owned(LinkScope scope, UUID id) {
+		if (scope.userId() != null) {
+			return repository.findByIdAndOwnerId(id, scope.userId())
+					.orElseThrow(() -> ApiException.notFound("Link not found"));
+		}
+		return repository.findByIdAndGuestId(id, scope.guestId())
 				.orElseThrow(() -> ApiException.notFound("Link not found"));
 	}
 

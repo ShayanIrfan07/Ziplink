@@ -8,6 +8,7 @@ public record ZiplinkProperties(
 		String publicBaseUrl,
 		List<String> corsAllowedOrigins,
 		Cookie cookie,
+		Session session,
 		RateLimit rateLimit,
 		boolean clicksAsync) {
 
@@ -24,11 +25,14 @@ public record ZiplinkProperties(
 		if (corsAllowedOrigins == null || corsAllowedOrigins.isEmpty()) {
 			throw new IllegalArgumentException("ziplink.cors-allowed-origins is required");
 		}
-		if (cookie == null || rateLimit == null) {
-			throw new IllegalArgumentException("ziplink cookie and rate-limit settings are required");
+		if (cookie == null || session == null || rateLimit == null) {
+			throw new IllegalArgumentException("ziplink cookie, session, and rate-limit settings are required");
 		}
-		if (rateLimit.createPerMinute() < 1) {
-			throw new IllegalArgumentException("ziplink.rate-limit.create-per-minute must be at least 1");
+		if (session.cookieName() == null || session.cookieName().isBlank() || session.maxAgeDays() < 1) {
+			throw new IllegalArgumentException("ziplink.session needs a cookie name and a max age of at least one day");
+		}
+		if (rateLimit.createPerMinute() < 1 || rateLimit.authPerMinute() < 1) {
+			throw new IllegalArgumentException("ziplink rate limits must be at least 1");
 		}
 	}
 
@@ -39,6 +43,9 @@ public record ZiplinkProperties(
 	public record Cookie(String name, boolean secure, String sameSite, int maxAgeDays) {
 	}
 
-	public record RateLimit(int createPerMinute) {
+	public record Session(String cookieName, int maxAgeDays) {
+	}
+
+	public record RateLimit(int createPerMinute, int authPerMinute) {
 	}
 }

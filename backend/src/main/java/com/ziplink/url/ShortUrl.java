@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import com.ziplink.guest.Guest;
+import com.ziplink.identity.UserAccount;
 
 @Entity
 @Table(name = "short_urls")
@@ -20,9 +21,13 @@ public class ShortUrl {
 	@Id
 	private UUID id;
 
-	@ManyToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "guest_id", nullable = false)
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "guest_id")
 	private Guest guest;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "owner_id")
+	private UserAccount owner;
 
 	@Column(name = "original_url", nullable = false, length = 2048)
 	private String originalUrl;
@@ -56,9 +61,24 @@ public class ShortUrl {
 			String customAlias,
 			Instant expiresAt,
 			Instant now) {
+		return create(guest, null, originalUrl, shortCode, customAlias, expiresAt, now);
+	}
+
+	public static ShortUrl create(
+			Guest guest,
+			UserAccount owner,
+			String originalUrl,
+			String shortCode,
+			String customAlias,
+			Instant expiresAt,
+			Instant now) {
+		if (guest == null && owner == null) {
+			throw new IllegalArgumentException("A link needs a guest or an account");
+		}
 		ShortUrl url = new ShortUrl();
 		url.id = UUID.randomUUID();
 		url.guest = guest;
+		url.owner = owner;
 		url.originalUrl = originalUrl;
 		url.shortCode = shortCode;
 		url.customAlias = customAlias;
@@ -94,6 +114,16 @@ public class ShortUrl {
 
 	public Guest getGuest() {
 		return guest;
+	}
+
+	public UserAccount getOwner() {
+		return owner;
+	}
+
+	public void assignOwner(UserAccount owner, Instant now) {
+		this.owner = owner;
+		this.guest = null;
+		this.updatedAt = now;
 	}
 
 	public String getOriginalUrl() {

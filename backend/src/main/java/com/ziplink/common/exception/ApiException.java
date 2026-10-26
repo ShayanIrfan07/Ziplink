@@ -57,9 +57,14 @@ public class ApiException extends RuntimeException {
 	}
 
 	public static ApiException rateLimited() {
-		return new ApiException(
-				ErrorCode.RATE_LIMITED,
-				HttpStatus.TOO_MANY_REQUESTS,
-				"Too many links were created from this network. Try again in a minute.");
+		return rateLimited("Too many links were created from this network. Try again in a minute.");
+	}
+
+	public static ApiException rateLimited(String message) {
+		return new ApiException(ErrorCode.RATE_LIMITED, HttpStatus.TOO_MANY_REQUESTS, message);
+	}
+
+	public static ApiException unauthorized(String message) {
+		return new ApiException(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED, message);
 	}
 }

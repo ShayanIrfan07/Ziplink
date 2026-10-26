@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ziplink.common.exception.ApiException;
 import com.ziplink.guest.Guest;
 import com.ziplink.guest.GuestService;
+import com.ziplink.identity.CurrentAccount;
+import com.ziplink.identity.UserAccount;
 import com.ziplink.url.click.ClickRecorder;
 import com.ziplink.url.click.ClientSignals;
 import com.ziplink.url.dto.CreateUrlRequest;
@@ -36,11 +38,13 @@ public class UrlController {
 	private final UrlService urls;
 	private final GuestService guests;
 	private final ClickRecorder clicks;
+	private final CurrentAccount accounts;
 
-	public UrlController(UrlService urls, GuestService guests, ClickRecorder clicks) {
+	public UrlController(UrlService urls, GuestService guests, ClickRecorder clicks, CurrentAccount accounts) {
 		this.urls = urls;
 		this.guests = guests;
 		this.clicks = clicks;
+		this.accounts = accounts;
 	}
 
 	@PostMapping("/api/v1/urls")
@@ -48,8 +52,9 @@ public class UrlController {
 			@Valid @RequestBody CreateUrlRequest request,
 			HttpServletRequest httpRequest,
 			HttpServletResponse httpResponse) {
-		Guest guest = guests.resolveOrCreate(httpRequest, httpResponse);
-		UrlResponse created = urls.create(guest, request, clientKey(httpRequest));
+		UrlResponse created = accounts.currentReference()
+				.map(user -> urls.createForUser(user, request, clientKey(httpRequest)))
+				.orElseGet(() -> urls.create(guests.resolveOrCreate(httpRequest, httpResponse), request, clientKey(httpRequest)));
 		return ResponseEntity.created(URI.create("/api/v1/urls/" + created.id())).body(created);
 	}
 
@@ -60,12 +65,14 @@ public class UrlController {
 			@RequestParam(defaultValue = "createdAt,desc") String sort,
 			@RequestParam(required = false) String q,
 			HttpServletRequest request) {
-		return urls.list(guests.find(request).orElse(null), page, size, sort, q);
+		return accounts.currentReference()
+				.map(user -> urls.list(LinkScope.user(user.getId()), page, size, sort, q))
+				.orElseGet(() -> urls.list(guests.find(request).orElse(null), page, size, sort, q));
 	}
 
 	@GetMapping("/api/v1/urls/{id}")
 	public UrlResponse get(@PathVariable UUID id, HttpServletRequest request) {
-		return urls.get(requireGuest(request), id);
+		return urls.get(scope(request), id);
 	}
 
 	@PatchMapping("/api/v1/urls/{id}")
@@ -73,12 +80,12 @@ public class UrlController {
 			@PathVariable UUID id,
 			@RequestBody UpdateUrlRequest requestBody,
 			HttpServletRequest request) {
-		return urls.update(requireGuest(request), id, requestBody);
+		return urls.update(scope(request), id, requestBody);
 	}
 
 	@DeleteMapping("/api/v1/urls/{id}")
 	public ResponseEntity<Void> delete(@PathVariable UUID id, HttpServletRequest request) {
-		urls.delete(requireGuest(request), id);
+		urls.delete(scope(request), id);
 		return ResponseEntity.noContent().build();
 	}
 
@@ -101,8 +108,14 @@ public class UrlController {
 				.build();
 	}
 
-	private Guest requireGuest(HttpServletRequest request) {
-		return guests.find(request).orElseThrow(() -> ApiException.notFound("Link not found"));
+	private LinkScope scope(HttpServletRequest request) {
+		return accounts.currentReference()
+				.map(UserAccount::getId)
+				.map(LinkScope::user)
+				.orElseGet(() -> guests.find(request)
+						.map(Guest::getId)
+						.map(LinkScope::guest)
+						.orElseThrow(() -> ApiException.notFound("Link not found")));
 	}
 
 	private static String clientKey(HttpServletRequest request) {

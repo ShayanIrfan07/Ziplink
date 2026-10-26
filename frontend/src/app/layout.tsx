@@ -3,6 +3,7 @@ import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { AppToaster } from "@/components/app-toaster";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { AuthProvider } from "@/features/auth/auth-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -42,12 +43,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <SiteHeader />
-        <main id="main" className="flex-1">
-          {children}
-        </main>
-        <SiteFooter />
-        <AppToaster />
+        <AuthProvider>
+          <SiteHeader />
+          <main id="main" className="flex-1">
+            {children}
+          </main>
+          <SiteFooter />
+          <AppToaster />
+        </AuthProvider>
       </body>
     </html>
   );
