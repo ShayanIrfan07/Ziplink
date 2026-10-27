@@ -12,12 +12,12 @@ Ziplink turns a long `http` or `https` URL into a short link, stores it in Postg
 - List, search, sort, disable, enable, and delete only the links that belong to the signed-in account.
 - Visitors who are not signed in can still create and manage links through the browser cookie.
 - Public redirect at `GET /{shortCode}`.
-- Click events are stored. A browser click is published to Kafka and then stored by this application. The signed-in dashboard shows totals, a daily UTC click chart, client categories, and the top referrers for the last 7, 14, or 30 days.
+- Click events are stored by a separate click worker. The API publishes a browser click to Kafka. The signed-in dashboard shows totals, a daily UTC click chart, client categories, and the top referrers for the last 7, 14, or 30 days.
 - Redirect lookups are cached in Redis. A changed, disabled, or deleted link is removed from the cache. If Redis is unavailable, the redirect is read from PostgreSQL.
 
-## What is not built yet
+## What stays in one place
 
-Splitting the backend into separate services is a later phase. Do not treat that as available.
+Accounts, links, redirects, and dashboard reads stay in the API. The click worker only stores click events. Both processes use the same PostgreSQL database. There is no separate account service.
 
 ## Stack
 
@@ -27,7 +27,7 @@ Splitting the backend into separate services is a later phase. Do not treat that
 
 ## Architecture
 
-Ziplink is a modular Spring Boot application plus a Next.js UI. The backend owns links, redirects, and the database. The frontend calls `/api/v1` and does not store link data itself.
+Ziplink is an API process, a click worker, and a Next.js UI. The API owns accounts, links, redirects, and dashboard reads. The click worker stores click events. They share PostgreSQL. The frontend calls `/api/v1` and does not store link data itself.
 
 Important decisions for this phase:
 
@@ -37,7 +37,7 @@ Important decisions for this phase:
 - **Redirect cache.** An active redirect is stored in Redis under the lowercased short code for up to 10 minutes, or sooner when the link has an expiration. Updating or deleting the link removes that entry after the database change commits. Redis does not decide whether a missing or disabled link exists, and a Redis failure falls back to PostgreSQL. Browser redirects stay temporary (`302`, `Cache-Control: no-store`).
 - **Redirects use 302.** Destinations, status, and expiration can change. A 301 would be cached by browsers after those changes. Redirect responses send `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 - **Destination safety.** Only `http` and `https` URLs are accepted. Other schemes, missing hosts, embedded credentials, and control characters are rejected. The backend does not fetch the destination. Redirecting to an address the creator supplied is the product; it is not an open redirect of an arbitrary `next` parameter.
-- **Clicks.** A click is a successful redirect. Missing, disabled, and expired links are not counted. Requests that look like bots, monitors, `curl`, or browser prefetch are not published. A browser click is sent to the Kafka topic `ziplink.clicks` after the redirect is chosen. This application consumes that topic and stores the row. The message carries an id, the link id, the time, the category, and a referrer without the query string or fragment. It does not carry an IP address or the raw user-agent string. The category is an approximate label: desktop, mobile, tablet, or unknown. Delivering the same id again does not create a second row. A refresh is a new id and counts as another click. If Kafka cannot accept the event, the visitor is still redirected and that click is not stored. Set `CLICK_BROKER_ENABLED=false` to write the row directly to PostgreSQL instead.
+- **Clicks.** A click is a successful redirect. Missing, disabled, and expired links are not counted. Requests that look like bots, monitors, `curl`, or browser prefetch are not published. The API sends a browser click to the Kafka topic `ziplink.clicks` after the redirect is chosen, and does not consume that topic. The click worker is a second process with no HTTP port. It consumes the topic and stores the row. The message carries an id, the link id, the time, the category, and a referrer without the query string or fragment. It does not carry an IP address or the raw user-agent string. The category is an approximate label: desktop, mobile, tablet, or unknown. Delivering the same id again does not create a second row. A refresh is a new id and counts as another click. If Kafka cannot accept the event, the visitor is still redirected and that click is not stored. Set `CLICK_BROKER_ENABLED=false` to write the row directly from the API and leave the worker stopped. The worker does not run Flyway. Start the API first so the schema exists.
 - **Aliases.** A custom alias becomes the short code. It must be 3–32 characters from `A-Z`, `a-z`, `0-9`, `_`, and `-`. Reserved names such as `api` and `swagger-ui` are rejected. Uniqueness is case-insensitive, and an existing code is never overwritten.
 
 The original static page that called a third-party shortener is kept in `legacy/static-prototype`. It is not part of the running application.
@@ -66,6 +66,12 @@ mvn spring-boot:run
 ```
 
 The API listens on `http://localhost:8080`. Interactive docs are at `http://localhost:8080/swagger-ui.html`. Liveness is `http://localhost:8080/actuator/health/liveness`.
+
+Start the click worker from `backend` in a second terminal. It stores clicks and does not listen on a port:
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.mainClass=com.ziplink.worker.ClickWorkerApplication"
+```
 
 Start the UI from `frontend`:
 
@@ -101,7 +107,8 @@ See `.env.example`. Local defaults in `backend/src/main/resources/application.ym
 | `REDIS_CACHE_ENABLED` | Set `false` to skip the redirect cache. |
 | `REDIS_TTL_SECONDS` | Maximum age of a cached redirect, from 1 to 86400. |
 | `KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers. Clicks are not stored when the broker cannot be reached, unless `CLICK_BROKER_ENABLED` is `false`. |
-| `CLICK_BROKER_ENABLED` | Set `false` to write clicks straight to PostgreSQL and skip Kafka. |
+| `CLICK_BROKER_ENABLED` | Set `false` to write clicks straight to PostgreSQL from the API and skip Kafka. |
+| `CLICK_CONSUMER_ENABLED` | Leave `false` on the API. The click worker turns consumption on itself. |
 | `CLICK_TOPIC` | Topic for click events. The default is `ziplink.clicks`. |
 | `CLICK_GROUP` | Consumer group that stores click events. |
 
@@ -109,7 +116,7 @@ Set `COOKIE_SECURE=true` and an `https` public URL in production. Do not commit 
 
 ## Database
 
-Flyway applies `backend/src/main/resources/db/migration` when the API starts. Hibernate validates the schema and does not change it. There is no automatic destructive migration.
+Flyway applies `backend/src/main/resources/db/migration` when the API starts. The click worker does not migrate. Hibernate validates the schema and does not change it. There is no automatic destructive migration.
 
 ## Tests
 
@@ -119,7 +126,7 @@ Backend, from `backend`:
 mvn test
 ```
 
-Unit tests cover URL validation, aliases, code generation, rate limiting, ownership, expiration, and click filtering. `UrlFlowIntegrationTest` starts PostgreSQL with Testcontainers. `ClickBrokerIntegrationTest` also starts Kafka. Both are skipped when Docker is not running. The other Spring tests write clicks directly to PostgreSQL.
+Unit tests cover URL validation, aliases, code generation, rate limiting, ownership, expiration, and click filtering. `UrlFlowIntegrationTest` starts PostgreSQL with Testcontainers. `ClickBrokerIntegrationTest` starts Kafka and the click worker. The API in that test publishes and does not consume. Both are skipped when Docker is not running. The other Spring tests write clicks directly to PostgreSQL.
 
 Frontend, from `frontend`:
 
@@ -151,10 +158,10 @@ Unsafe requests need the CSRF header. Errors use `{ "code", "message", "fields",
 
 ## Docker
 
-`infra/docker-compose.yml` runs PostgreSQL, Redis, and Kafka for local development. `backend/Dockerfile` and `frontend/Dockerfile` build the API and the UI. They are not required for the local Maven and npm workflow.
+`infra/docker-compose.yml` runs PostgreSQL, Redis, and Kafka for local development. `backend/Dockerfile` builds the API. `frontend/Dockerfile` builds the UI. They are not required for the local Maven and npm workflow. The click worker is the same codebase started with `ClickWorkerApplication`.
 
 ## Deployment notes
 
 Bind the API to `0.0.0.0` and the platform port. The checked-in configuration does that. Use managed PostgreSQL, set the variables above, and run the same Flyway migrations on startup. Put the short-link host in `PUBLIC_BASE_URL` and the UI origin in `CORS_ALLOWED_ORIGINS`. Health checks should use `/actuator/health/liveness` and `/actuator/health/readiness`. Actuator exposes only health and info, without environment details.
 
-Point `REDIS_HOST` at a Redis instance when the redirect cache should be used. Readiness stays up when Redis is down, and redirects fall back to PostgreSQL. Point `KAFKA_BOOTSTRAP_SERVERS` at the click-event brokers. Readiness does not check Kafka. If the cluster will not let the application create topics, create `ziplink.clicks` first. Separate deployable services are a later phase.
+Point `REDIS_HOST` at a Redis instance when the redirect cache should be used. Readiness stays up when Redis is down, and redirects fall back to PostgreSQL. Point `KAFKA_BOOTSTRAP_SERVERS` at the click-event brokers. Readiness does not check Kafka. If the cluster will not let the API create topics, create `ziplink.clicks` first. Run the click worker as a second process with the same database and Kafka settings. It does not open a port and it does not run migrations.

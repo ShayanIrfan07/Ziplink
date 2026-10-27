@@ -7,7 +7,10 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(prefix = "ziplink.click-events", name = "broker-enabled", havingValue = "true")
+@ConditionalOnProperty(
+		prefix = "ziplink.click-events",
+		name = {"broker-enabled", "consumer-enabled"},
+		havingValue = "true")
 public class ClickEventListener {
 
 	private static final Logger log = LoggerFactory.getLogger(ClickEventListener.class);

@@ -10,12 +10,16 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import com.ziplink.support.RequiresDocker;
+import com.ziplink.worker.ClickWorkerApplication;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
@@ -46,6 +50,7 @@ class ClickBrokerIntegrationTest {
 		registry.add("spring.datasource.password", POSTGRES::getPassword);
 		registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
 		registry.add("ziplink.click-events.broker-enabled", () -> "true");
+		registry.add("ziplink.click-events.consumer-enabled", () -> "false");
 		registry.add("ziplink.clicks-async", () -> "false");
 	}
 
@@ -55,28 +60,39 @@ class ClickBrokerIntegrationTest {
 	@Autowired
 	private ClickEventRepository clickEvents;
 
+	@Autowired
+	private org.springframework.context.ApplicationContext api;
+
 	@Test
-	void browserClicksArriveThroughTheBrokerAndBotsDoNot() throws Exception {
+	void browserClicksArriveThroughTheWorkerAndBotsDoNot() throws Exception {
+		assertThat(api.getBeansOfType(ClickEventListener.class)).isEmpty();
+		try (ConfigurableApplicationContext worker = worker()) {
+			assertThat(worker.getBeansOfType(ClickEventListener.class)).hasSize(1);
+			storeBrowserClicks();
+		}
+	}
+
+	private void storeBrowserClicks() throws Exception {
 		mockMvc.perform(post("/api/v1/urls")
 						.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
 						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"originalUrl\":\"https://example.com/kafka\",\"alias\":\"phase5-clicks\"}"))
+						.content("{\"originalUrl\":\"https://example.com/kafka\",\"alias\":\"phase6-clicks\"}"))
 				.andExpect(status().isCreated());
 
-		mockMvc.perform(get("/phase5-clicks")
+		mockMvc.perform(get("/phase6-clicks")
 						.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 						.header("Referer", "https://News.Example/story?token=secret#part"))
 				.andExpect(status().isFound())
 				.andExpect(header().string("Location", "https://example.com/kafka"));
 		waitUntil(1);
 
-		mockMvc.perform(get("/phase5-clicks")
+		mockMvc.perform(get("/phase6-clicks")
 						.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 						.header("Referer", "https://News.Example/story?token=secret#part"))
 				.andExpect(status().isFound());
 		waitUntil(2);
 
-		mockMvc.perform(get("/phase5-clicks").header("User-Agent", "curl/8.4.0"))
+		mockMvc.perform(get("/phase6-clicks").header("User-Agent", "curl/8.4.0"))
 				.andExpect(status().isFound());
 		Thread.sleep(Duration.ofSeconds(2));
 
@@ -86,6 +102,20 @@ class ClickBrokerIntegrationTest {
 			assertThat(event.getClientCategory()).isEqualTo(ClientCategory.DESKTOP);
 		});
 		assertThat(clickEvents.findAll()).extracting(ClickEvent::getId).doesNotHaveDuplicates();
+	}
+
+	private ConfigurableApplicationContext worker() {
+		return new SpringApplicationBuilder(ClickWorkerApplication.class)
+				.web(WebApplicationType.NONE)
+				.run(
+						"--spring.main.web-application-type=none",
+						"--spring.flyway.enabled=false",
+						"--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
+						"--spring.datasource.username=" + POSTGRES.getUsername(),
+						"--spring.datasource.password=" + POSTGRES.getPassword(),
+						"--spring.kafka.bootstrap-servers=" + KAFKA.getBootstrapServers(),
+						"--ziplink.click-events.broker-enabled=true",
+						"--ziplink.click-events.consumer-enabled=true");
 	}
 
 	private void waitUntil(long expected) throws InterruptedException {
