@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { AppToaster } from "@/components/app-toaster";
 import { SiteFooter } from "@/components/site-footer";
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
   description: "Turn long URLs into short links you can share, expire, and manage.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
