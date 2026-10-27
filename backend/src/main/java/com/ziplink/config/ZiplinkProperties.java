@@ -10,7 +10,8 @@ public record ZiplinkProperties(
 		Cookie cookie,
 		Session session,
 		RateLimit rateLimit,
-		boolean clicksAsync) {
+		boolean clicksAsync,
+		Cache cache) {
 
 	public ZiplinkProperties {
 		if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
@@ -34,6 +35,12 @@ public record ZiplinkProperties(
 		if (rateLimit.createPerMinute() < 1 || rateLimit.authPerMinute() < 1) {
 			throw new IllegalArgumentException("ziplink rate limits must be at least 1");
 		}
+		if (cache == null || cache.keyPrefix() == null || cache.keyPrefix().isBlank()) {
+			throw new IllegalArgumentException("ziplink.cache needs a key prefix");
+		}
+		if (cache.ttlSeconds() < 1 || cache.ttlSeconds() > 86_400) {
+			throw new IllegalArgumentException("ziplink.cache.ttl-seconds must be between 1 and 86400");
+		}
 	}
 
 	public String shortUrlFor(String shortCode) {
@@ -47,5 +54,8 @@ public record ZiplinkProperties(
 	}
 
 	public record RateLimit(int createPerMinute, int authPerMinute) {
+	}
+
+	public record Cache(boolean enabled, String keyPrefix, int ttlSeconds) {
 	}
 }

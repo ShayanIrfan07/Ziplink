@@ -13,15 +13,16 @@ Ziplink turns a long `http` or `https` URL into a short link, stores it in Postg
 - Visitors who are not signed in can still create and manage links through the browser cookie.
 - Public redirect at `GET /{shortCode}`.
 - Click events are stored. The signed-in dashboard shows totals, a daily UTC click chart, client categories, and the top referrers for the last 7, 14, or 30 days.
+- Redirect lookups are cached in Redis. A changed, disabled, or deleted link is removed from the cache. If Redis is unavailable, the redirect is read from PostgreSQL.
 
 ## What is not built yet
 
-Redis caching, Kafka, and splitting the backend into separate services are later phases. Do not treat those as available.
+Kafka and splitting the backend into separate services are later phases. Do not treat those as available.
 
 ## Stack
 
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn-style components, React Hook Form, Zod
-- Backend: Java 21, Spring Boot 4.1, Spring Security, Spring Data JPA, Flyway, PostgreSQL
+- Backend: Java 21, Spring Boot 4.1, Spring Security, Spring Data JPA, Flyway, PostgreSQL, Redis
 - Tests: JUnit 5, Mockito, Testcontainers, Vitest
 
 ## Architecture
@@ -33,6 +34,7 @@ Important decisions for this phase:
 - **Accounts.** Registration and login use BCrypt password hashes. The browser receives an HTTP-only `ziplink_session` cookie. The database stores only the SHA-256 hash of that token. A session lasts 14 days and is deleted on logout. Login and registration are limited to 10 attempts per minute per client address, in memory, for this single process. Failed login always returns the same message.
 - **Ownership.** A signed-in request creates and lists links by account id. A missing or foreign link returns 404. Signing up or signing in from a browser that already has guest links moves those links onto the account and clears the guest association, so a later account on the same browser does not inherit them. Without a session, the HTTP-only `ziplink_guest` cookie still scopes anonymous links. Anonymous creation is rate limited to 20 requests per minute per client address.
 - **CSRF.** Session and guest cookies are credentials. Spring Security issues a readable `XSRF-TOKEN` cookie, and the frontend sends it back as `X-XSRF-TOKEN`. Cookies use `SameSite=Lax` and are marked `Secure` only when `COOKIE_SECURE=true`. HTTP basic and form login are disabled. Passwords, session tokens, and password hashes are not written to logs.
+- **Redirect cache.** An active redirect is stored in Redis under the lowercased short code for up to 10 minutes, or sooner when the link has an expiration. Updating or deleting the link removes that entry after the database change commits. Redis does not decide whether a missing or disabled link exists, and a Redis failure falls back to PostgreSQL. Browser redirects stay temporary (`302`, `Cache-Control: no-store`).
 - **Redirects use 302.** Destinations, status, and expiration can change. A 301 would be cached by browsers after those changes. Redirect responses send `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 - **Destination safety.** Only `http` and `https` URLs are accepted. Other schemes, missing hosts, embedded credentials, and control characters are rejected. The backend does not fetch the destination. Redirecting to an address the creator supplied is the product; it is not an open redirect of an arbitrary `next` parameter.
 - **Clicks.** A click is a successful redirect. Missing, disabled, and expired links are not counted. Requests that look like bots, monitors, `curl`, or browser prefetch are not stored. The stored referrer keeps the scheme, host, and path, and drops the query string and fragment. Raw IP addresses and raw user-agent strings are not stored. The category is an approximate label derived from the user agent: desktop, mobile, tablet, or unknown. Recording runs after the redirect decision. If the recorder is busy or fails, the visitor is still redirected. This is not exactly-once delivery: a refresh counts as another click.
@@ -45,17 +47,17 @@ The original static page that called a third-party shortener is kept in `legacy/
 - JDK 21
 - Maven 3.9+
 - Node.js 24
-- Docker, for PostgreSQL and the database integration tests
+- Docker, for PostgreSQL, Redis, and the integration tests
 
 ## Local setup
 
-Start PostgreSQL:
+Start PostgreSQL and Redis:
 
 ```powershell
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-The compose file publishes PostgreSQL on host port **5433** so it does not collide with another database already using 5432. The local placeholder password is `ziplink`. That value is for this machine only.
+The compose file publishes PostgreSQL on host port **5433** so it does not collide with another database already using 5432. Redis is published on **6379**. The local placeholder password is `ziplink`. That value is for this machine only.
 
 Start the API from `backend`:
 
@@ -94,6 +96,10 @@ See `.env.example`. Local defaults in `backend/src/main/resources/application.ym
 | `AUTH_RATE_LIMIT_PER_MINUTE` | Login and registration limit for one API process |
 | `SESSION_MAX_AGE_DAYS` | Session cookie lifetime |
 | `NEXT_PUBLIC_API_BASE_URL` | API origin used by the browser. This is public configuration, not a secret. |
+| `REDIS_HOST` | Redis host. Redirects still use PostgreSQL when Redis cannot be reached. |
+| `REDIS_PORT` | Redis port. The compose file publishes `6379`. |
+| `REDIS_CACHE_ENABLED` | Set `false` to skip the redirect cache. |
+| `REDIS_TTL_SECONDS` | Maximum age of a cached redirect, from 1 to 86400. |
 
 Set `COOKIE_SECURE=true` and an `https` public URL in production. Do not commit a real `.env`.
 
@@ -141,10 +147,10 @@ Unsafe requests need the CSRF header. Errors use `{ "code", "message", "fields",
 
 ## Docker
 
-`infra/docker-compose.yml` runs PostgreSQL for local development. `backend/Dockerfile` and `frontend/Dockerfile` build the API and the UI. They are not required for the local Maven and npm workflow.
+`infra/docker-compose.yml` runs PostgreSQL and Redis for local development. `backend/Dockerfile` and `frontend/Dockerfile` build the API and the UI. They are not required for the local Maven and npm workflow.
 
 ## Deployment notes
 
 Bind the API to `0.0.0.0` and the platform port. The checked-in configuration does that. Use managed PostgreSQL, set the variables above, and run the same Flyway migrations on startup. Put the short-link host in `PUBLIC_BASE_URL` and the UI origin in `CORS_ALLOWED_ORIGINS`. Health checks should use `/actuator/health/liveness` and `/actuator/health/readiness`. Actuator exposes only health and info, without environment details.
 
-Redis, Kafka, and separate deployable services are intentionally absent.
+Point `REDIS_HOST` at a Redis instance when the redirect cache should be used. Readiness stays up when Redis is down, and redirects fall back to PostgreSQL. Kafka and separate deployable services are later phases.

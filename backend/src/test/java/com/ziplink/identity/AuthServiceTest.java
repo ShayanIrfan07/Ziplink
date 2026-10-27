@@ -63,7 +63,8 @@ class AuthServiceTest {
 						new ZiplinkProperties.Cookie("ziplink_guest", false, "Lax", 400),
 						new ZiplinkProperties.Session("ziplink_session", 14),
 						new ZiplinkProperties.RateLimit(20, 10),
-						false),
+						false,
+						new ZiplinkProperties.Cache(false, "ziplink:redirect:", 600)),
 				Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 

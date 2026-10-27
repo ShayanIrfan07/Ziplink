@@ -3,6 +3,9 @@ package com.ziplink.url;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,6 +44,8 @@ class UrlServiceTest {
 	private ShortUrlWriter writer;
 	@Mock
 	private ShortCodeGenerator codes;
+	@Mock
+	private RedirectCache cache;
 
 	private UrlService service;
 	private Guest guest;
@@ -61,9 +66,12 @@ class UrlServiceTest {
 						new ZiplinkProperties.Cookie("ziplink_guest", false, "Lax", 400),
 						new ZiplinkProperties.Session("ziplink_session", 14),
 						new ZiplinkProperties.RateLimit(100, 10),
-						false),
+						false,
+						new ZiplinkProperties.Cache(false, "ziplink:redirect:", 600)),
 				Clock.fixed(NOW, ZoneOffset.UTC),
-				new SimpleMeterRegistry());
+				new SimpleMeterRegistry(),
+				cache);
+		lenient().when(cache.find(any())).thenReturn(Optional.empty());
 	}
 
 	@Test
@@ -180,6 +188,7 @@ class UrlServiceTest {
 
 		assertThat(response.originalUrl()).isEqualTo("https://example.com/new");
 		assertThat(response.expiresAt()).isNull();
+		verify(cache).forget("abc2345");
 	}
 
 	@Test
@@ -207,5 +216,27 @@ class UrlServiceTest {
 
 		assertThat(page.items()).hasSize(1);
 		assertThat(page.totalElements()).isEqualTo(1);
+	}
+
+	@Test
+	void resolveUsesACachedDestinationWithoutReadingTheDatabase() {
+		UUID id = UUID.randomUUID();
+		when(cache.find("cached1")).thenReturn(Optional.of(new RedirectTarget(id, "https://example.com/cached")));
+
+		RedirectTarget target = service.resolve("cached1");
+
+		assertThat(target.destination()).isEqualTo("https://example.com/cached");
+		verify(repository, never()).findByShortCodeIgnoreCase(any());
+	}
+
+	@Test
+	void resolveStoresAnActiveLinkAfterACacheMiss() {
+		ShortUrl url = ShortUrl.create(guest, "https://example.com/live", "live234", null, null, NOW);
+		when(repository.findByShortCodeIgnoreCase("live234")).thenReturn(Optional.of(url));
+
+		RedirectTarget target = service.resolve("live234");
+
+		assertThat(target.destination()).isEqualTo("https://example.com/live");
+		verify(cache).remember(eq("live234"), eq(target), isNull());
 	}
 }

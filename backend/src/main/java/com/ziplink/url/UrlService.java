@@ -3,6 +3,7 @@ package com.ziplink.url;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -11,6 +12,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.ziplink.common.exception.ApiException;
 import com.ziplink.common.exception.ErrorCode;
 import com.ziplink.config.ZiplinkProperties;
@@ -38,6 +41,7 @@ public class UrlService {
 	private final ZiplinkProperties properties;
 	private final Clock clock;
 	private final MeterRegistry meters;
+	private final RedirectCache cache;
 
 	public UrlService(
 			ShortUrlRepository repository,
@@ -48,7 +52,8 @@ public class UrlService {
 			CreateRateLimiter rateLimiter,
 			ZiplinkProperties properties,
 			Clock clock,
-			MeterRegistry meters) {
+			MeterRegistry meters,
+			RedirectCache cache) {
 		this.repository = repository;
 		this.writer = writer;
 		this.codes = codes;
@@ -58,6 +63,7 @@ public class UrlService {
 		this.properties = properties;
 		this.clock = clock;
 		this.meters = meters;
+		this.cache = cache;
 	}
 
 	@Transactional
@@ -185,6 +191,7 @@ public class UrlService {
 			}
 			url.changeExpiration(expiresAt, now);
 		}
+		forgetAfterCommit(url.getShortCode());
 		return toResponse(url);
 	}
 
@@ -195,7 +202,9 @@ public class UrlService {
 
 	@Transactional
 	public void delete(LinkScope scope, UUID id) {
-		repository.delete(owned(scope, id));
+		ShortUrl url = owned(scope, id);
+		repository.delete(url);
+		forgetAfterCommit(url.getShortCode());
 	}
 
 	@Transactional(readOnly = true)
@@ -209,6 +218,11 @@ public class UrlService {
 	 */
 	@Transactional(readOnly = true)
 	public RedirectTarget resolve(String shortCode) {
+		Optional<RedirectTarget> cached = cache.find(shortCode);
+		if (cached.isPresent()) {
+			meters.counter("ziplink.redirects", "result", "success").increment();
+			return cached.get();
+		}
 		ShortUrl url = repository.findByShortCodeIgnoreCase(shortCode)
 				.orElseThrow(() -> ApiException.notFound("Link not found"));
 		if (url.getStatus() != UrlStatus.ACTIVE) {
@@ -217,8 +231,23 @@ public class UrlService {
 		if (url.expired(clock.instant())) {
 			throw ApiException.gone("This link has expired");
 		}
+		RedirectTarget target = new RedirectTarget(url.getId(), url.getOriginalUrl());
+		cache.remember(url.getShortCode(), target, url.getExpiresAt());
 		meters.counter("ziplink.redirects", "result", "success").increment();
-		return new RedirectTarget(url.getId(), url.getOriginalUrl());
+		return target;
+	}
+
+	private void forgetAfterCommit(String shortCode) {
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCommit() {
+					cache.forget(shortCode);
+				}
+			});
+			return;
+		}
+		cache.forget(shortCode);
 	}
 
 	private ShortUrl owned(LinkScope scope, UUID id) {

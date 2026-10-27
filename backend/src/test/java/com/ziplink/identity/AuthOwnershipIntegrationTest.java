@@ -22,7 +22,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest(properties = "ziplink.clicks.async=false")
+@SpringBootTest(properties = "ziplink.clicks-async=false")
 @AutoConfigureMockMvc
 @Testcontainers
 @ExtendWith(RequiresDocker.class)
