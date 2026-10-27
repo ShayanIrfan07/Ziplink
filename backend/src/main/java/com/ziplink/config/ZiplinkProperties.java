@@ -11,7 +11,8 @@ public record ZiplinkProperties(
 		Session session,
 		RateLimit rateLimit,
 		boolean clicksAsync,
-		Cache cache) {
+		Cache cache,
+		ClickEvents clickEvents) {
 
 	public ZiplinkProperties {
 		if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
@@ -41,6 +42,14 @@ public record ZiplinkProperties(
 		if (cache.ttlSeconds() < 1 || cache.ttlSeconds() > 86_400) {
 			throw new IllegalArgumentException("ziplink.cache.ttl-seconds must be between 1 and 86400");
 		}
+		if (clickEvents == null
+				|| clickEvents.topic() == null
+				|| !clickEvents.topic().matches("[A-Za-z0-9._-]{1,249}")
+				|| clickEvents.group() == null
+				|| clickEvents.group().isBlank()
+				|| clickEvents.group().length() > 255) {
+			throw new IllegalArgumentException("ziplink.click-events needs a topic and a consumer group");
+		}
 	}
 
 	public String shortUrlFor(String shortCode) {
@@ -57,5 +66,8 @@ public record ZiplinkProperties(
 	}
 
 	public record Cache(boolean enabled, String keyPrefix, int ttlSeconds) {
+	}
+
+	public record ClickEvents(boolean brokerEnabled, String topic, String group) {
 	}
 }
