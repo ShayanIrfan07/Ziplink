@@ -1,5 +1,6 @@
 package com.ziplink.url.click;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
@@ -37,4 +38,104 @@ public interface ClickEventRepository extends JpaRepository<ClickEvent, UUID> {
 			order by click.clickedAt desc
 			""")
 	List<RecentClickView> findRecentByOwner(@Param("ownerId") UUID ownerId, Pageable pageable);
+
+	@Query(value = """
+			SELECT CAST(click.clicked_at AT TIME ZONE 'UTC' AS date) AS bucket,
+			       COUNT(*) AS clicks
+			FROM click_events click
+			JOIN short_urls url ON url.id = click.short_url_id
+			WHERE url.owner_id = :ownerId
+			  AND click.clicked_at >= :from
+			  AND click.clicked_at < :to
+			GROUP BY CAST(click.clicked_at AT TIME ZONE 'UTC' AS date)
+			ORDER BY CAST(click.clicked_at AT TIME ZONE 'UTC' AS date)
+			""", nativeQuery = true)
+	List<Object[]> countByUtcDay(
+			@Param("ownerId") UUID ownerId,
+			@Param("from") Instant from,
+			@Param("to") Instant to);
+
+	@Query(value = """
+			SELECT CAST(click.clicked_at AT TIME ZONE 'UTC' AS date) AS bucket,
+			       COUNT(*) AS clicks
+			FROM click_events click
+			JOIN short_urls url ON url.id = click.short_url_id
+			WHERE url.owner_id = :ownerId
+			  AND url.id = :linkId
+			  AND click.clicked_at >= :from
+			  AND click.clicked_at < :to
+			GROUP BY CAST(click.clicked_at AT TIME ZONE 'UTC' AS date)
+			ORDER BY CAST(click.clicked_at AT TIME ZONE 'UTC' AS date)
+			""", nativeQuery = true)
+	List<Object[]> countByUtcDayForLink(
+			@Param("ownerId") UUID ownerId,
+			@Param("linkId") UUID linkId,
+			@Param("from") Instant from,
+			@Param("to") Instant to);
+
+	@Query(value = """
+			SELECT click.client_category AS category, COUNT(*) AS clicks
+			FROM click_events click
+			JOIN short_urls url ON url.id = click.short_url_id
+			WHERE url.owner_id = :ownerId
+			  AND click.clicked_at >= :from
+			  AND click.clicked_at < :to
+			GROUP BY click.client_category
+			ORDER BY COUNT(*) DESC, click.client_category ASC
+			""", nativeQuery = true)
+	List<Object[]> countByCategory(
+			@Param("ownerId") UUID ownerId,
+			@Param("from") Instant from,
+			@Param("to") Instant to);
+
+	@Query(value = """
+			SELECT click.client_category AS category, COUNT(*) AS clicks
+			FROM click_events click
+			JOIN short_urls url ON url.id = click.short_url_id
+			WHERE url.owner_id = :ownerId
+			  AND url.id = :linkId
+			  AND click.clicked_at >= :from
+			  AND click.clicked_at < :to
+			GROUP BY click.client_category
+			ORDER BY COUNT(*) DESC, click.client_category ASC
+			""", nativeQuery = true)
+	List<Object[]> countByCategoryForLink(
+			@Param("ownerId") UUID ownerId,
+			@Param("linkId") UUID linkId,
+			@Param("from") Instant from,
+			@Param("to") Instant to);
+
+	@Query(value = """
+			SELECT click.referrer AS referrer, COUNT(*) AS clicks
+			FROM click_events click
+			JOIN short_urls url ON url.id = click.short_url_id
+			WHERE url.owner_id = :ownerId
+			  AND click.clicked_at >= :from
+			  AND click.clicked_at < :to
+			GROUP BY click.referrer
+			ORDER BY COUNT(*) DESC, click.referrer ASC NULLS LAST
+			""", nativeQuery = true)
+	List<Object[]> countByReferrer(
+			@Param("ownerId") UUID ownerId,
+			@Param("from") Instant from,
+			@Param("to") Instant to,
+			Pageable pageable);
+
+	@Query(value = """
+			SELECT click.referrer AS referrer, COUNT(*) AS clicks
+			FROM click_events click
+			JOIN short_urls url ON url.id = click.short_url_id
+			WHERE url.owner_id = :ownerId
+			  AND url.id = :linkId
+			  AND click.clicked_at >= :from
+			  AND click.clicked_at < :to
+			GROUP BY click.referrer
+			ORDER BY COUNT(*) DESC, click.referrer ASC NULLS LAST
+			""", nativeQuery = true)
+	List<Object[]> countByReferrerForLink(
+			@Param("ownerId") UUID ownerId,
+			@Param("linkId") UUID linkId,
+			@Param("from") Instant from,
+			@Param("to") Instant to,
+			Pageable pageable);
 }

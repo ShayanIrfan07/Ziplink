@@ -3,14 +3,20 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ClickTrendPanel, type TrendLink } from "@/features/dashboard/click-trend";
 import { LinkManager } from "@/features/links/link-manager";
-import { ApiRequestError, dashboardSummary, errorMessage } from "@/lib/api/client";
-import type { DashboardSummary } from "@/types/account";
+import { ApiRequestError, clickTrend, dashboardSummary, errorMessage } from "@/lib/api/client";
+import type { ClickTrend, DashboardSummary } from "@/types/account";
 
 export function DashboardScreen() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "signed-out" | "error">("loading");
   const [message, setMessage] = useState("");
+  const [days, setDays] = useState(14);
+  const [linkId, setLinkId] = useState("");
+  const [trend, setTrend] = useState<ClickTrend | null>(null);
+  const [trendStatus, setTrendStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [trendMessage, setTrendMessage] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -37,12 +43,36 @@ export function DashboardScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (status !== "ready") {
+      return;
+    }
+    let active = true;
+    clickTrend(days, linkId || undefined)
+      .then((next) => {
+        if (active) {
+          setTrend(next);
+          setTrendStatus("ready");
+        }
+      })
+      .catch((error: unknown) => {
+        if (!active) {
+          return;
+        }
+        setTrendMessage(errorMessage(error));
+        setTrendStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [status, days, linkId]);
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
       <p className="text-sm uppercase tracking-[0.16em] text-accent">Dashboard</p>
       <h1 className="mt-2 font-display text-4xl tracking-tight">Your links</h1>
       <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-        Counts come from links and clicks stored for this account. Another account cannot see them.
+        Counts and the daily chart come from clicks stored for this account. Another account cannot see them.
       </p>
 
       {status === "loading" ? <DashboardSkeleton /> : null}
@@ -69,6 +99,16 @@ export function DashboardScreen() {
       {status === "ready" && summary ? (
         <>
           <DashboardSummaryCards summary={summary} />
+          <ClickTrendPanel
+            trend={trend}
+            status={trendStatus}
+            message={trendMessage}
+            days={days}
+            onDaysChange={setDays}
+            links={trendLinks(summary)}
+            linkId={linkId}
+            onLinkChange={setLinkId}
+          />
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             <section className="rounded-3xl border border-border bg-card p-5">
               <h2 className="font-display text-2xl">Top links</h2>
@@ -130,6 +170,19 @@ export function DashboardSummaryCards({ summary }: { summary: DashboardSummary }
       ))}
     </div>
   );
+}
+
+function trendLinks(summary: DashboardSummary): TrendLink[] {
+  const seen = new Set<string>();
+  const links: TrendLink[] = [];
+  for (const link of [...summary.recentLinks, ...summary.topLinks]) {
+    if (seen.has(link.id)) {
+      continue;
+    }
+    seen.add(link.id);
+    links.push({ id: link.id, shortCode: link.shortCode });
+  }
+  return links;
 }
 
 function DashboardSkeleton() {
