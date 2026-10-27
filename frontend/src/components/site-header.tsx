@@ -3,7 +3,6 @@
 import { Link2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/auth-provider";
 import { logoutAccount } from "@/lib/api/client";
@@ -57,7 +56,6 @@ export function SiteHeader() {
               Sign in
             </Link>
           )}
-          <ThemeToggle />
         </nav>
       </div>
     </header>

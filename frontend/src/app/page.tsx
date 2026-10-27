@@ -30,8 +30,7 @@ export default function HomePage() {
     <div>
       <section id="product" className="mx-auto grid w-full max-w-6xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-20">
         <div>
-          <p className="text-sm font-medium uppercase tracking-[0.18em] text-accent">URL shortener</p>
-          <h1 className="mt-3 font-display text-5xl leading-none tracking-tight sm:text-6xl">
+          <h1 className="font-display text-5xl leading-none tracking-tight sm:text-6xl">
             Short links.
             <span className="block text-primary">Smart insights.</span>
           </h1>
