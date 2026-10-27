@@ -17,6 +17,13 @@ spring:
     enabled: true
   jackson:
     time-zone: UTC
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: ${REDIS_TIMEOUT:500ms}
+      repositories:
+        enabled: false
   lifecycle:
     timeout-per-shutdown-phase: 20s
 
@@ -40,6 +47,9 @@ management:
       probes:
         enabled: true
       show-details: never
+  health:
+    redis:
+      enabled: false
   info:
     env:
       enabled: false
@@ -68,6 +78,10 @@ ziplink:
     create-per-minute: ${CREATE_RATE_LIMIT_PER_MINUTE:20}
     auth-per-minute: ${AUTH_RATE_LIMIT_PER_MINUTE:10}
   clicks-async: true
+  cache:
+    enabled: ${REDIS_CACHE_ENABLED:true}
+    key-prefix: ${REDIS_KEY_PREFIX:ziplink:redirect:}
+    ttl-seconds: ${REDIS_TTL_SECONDS:600}
 
 logging:
   pattern:
