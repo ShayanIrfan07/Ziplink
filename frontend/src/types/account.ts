@@ -20,6 +20,30 @@ export type RecentClick = {
   referrer: string | null;
 };
 
+export type ClickPoint = {
+  date: string;
+  clicks: number;
+};
+
+export type CategoryCount = {
+  category: string;
+  clicks: number;
+};
+
+export type ReferrerCount = {
+  referrer: string | null;
+  clicks: number;
+};
+
+export type ClickTrend = {
+  from: string;
+  to: string;
+  totalClicks: number;
+  points: ClickPoint[];
+  categories: CategoryCount[];
+  referrers: ReferrerCount[];
+};
+
 export type DashboardSummary = {
   totalLinks: number;
   totalClicks: number;

@@ -1,4 +1,4 @@
-import type { DashboardSummary, User } from "@/types/account";
+import type { ClickTrend, DashboardSummary, User } from "@/types/account";
 import type { ApiErrorBody, PageResponse, UrlResponse, UrlStatus } from "@/types/url";
 
 export class ApiRequestError extends Error {
@@ -158,4 +158,12 @@ export async function currentUser() {
 
 export function dashboardSummary() {
   return apiRequest<DashboardSummary>("/api/v1/dashboard/summary");
+}
+
+export function clickTrend(days: number, linkId?: string) {
+  const params = new URLSearchParams({ days: String(days) });
+  if (linkId) {
+    params.set("linkId", linkId);
+  }
+  return apiRequest<ClickTrend>(`/api/v1/dashboard/clicks?${params.toString()}`);
 }

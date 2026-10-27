@@ -12,11 +12,11 @@ Ziplink turns a long `http` or `https` URL into a short link, stores it in Postg
 - List, search, sort, disable, enable, and delete only the links that belong to the signed-in account.
 - Visitors who are not signed in can still create and manage links through the browser cookie.
 - Public redirect at `GET /{shortCode}`.
-- Click events are stored. The dashboard uses those stored events. There is no time-series chart yet.
+- Click events are stored. The signed-in dashboard shows totals, a daily UTC click chart, client categories, and the top referrers for the last 7, 14, or 30 days.
 
 ## What is not built yet
 
-Analytics charts, Redis caching, Kafka, and splitting the backend into separate services are later phases. Do not treat those as available.
+Redis caching, Kafka, and splitting the backend into separate services are later phases. Do not treat those as available.
 
 ## Stack
 
@@ -129,6 +129,7 @@ npm run build
 | `POST` | `/api/v1/auth/logout` | `204`. Requires a session. Deletes that session. |
 | `GET` | `/api/v1/auth/me` | The signed-in account, or `401`. |
 | `GET` | `/api/v1/dashboard/summary` | Counts, top links, and recent clicks for the signed-in account, or `401`. |
+| `GET` | `/api/v1/dashboard/clicks` | Daily UTC click counts, client categories, and up to five referrers for the signed-in account. `days` is 1–90 and defaults to 14. Optional `linkId` limits the series to one owned link, or returns `404`. |
 | `POST` | `/api/v1/urls` | `201` and the new link. Uses the session when present, otherwise the guest cookie. |
 | `GET` | `/api/v1/urls` | Page of links for the session, or for the guest cookie when signed out. |
 | `GET` | `/api/v1/urls/{id}` | One owned link, or `404`. |
