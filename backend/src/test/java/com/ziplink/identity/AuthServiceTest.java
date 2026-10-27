@@ -64,7 +64,8 @@ class AuthServiceTest {
 						new ZiplinkProperties.Session("ziplink_session", 14),
 						new ZiplinkProperties.RateLimit(20, 10),
 						false,
-						new ZiplinkProperties.Cache(false, "ziplink:redirect:", 600)),
+						new ZiplinkProperties.Cache(false, "ziplink:redirect:", 600),
+						new ZiplinkProperties.ClickEvents(false, "ziplink.clicks", "ziplink-clicks")),
 				Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 

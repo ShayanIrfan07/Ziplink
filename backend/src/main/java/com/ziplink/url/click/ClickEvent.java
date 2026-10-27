@@ -37,8 +37,8 @@ public class ClickEvent {
 	protected ClickEvent() {
 	}
 
-	public ClickEvent(ShortUrl shortUrl, Instant clickedAt, String referrer, ClientCategory clientCategory) {
-		this.id = UUID.randomUUID();
+	public ClickEvent(UUID id, ShortUrl shortUrl, Instant clickedAt, String referrer, ClientCategory clientCategory) {
+		this.id = id;
 		this.shortUrl = shortUrl;
 		this.clickedAt = clickedAt;
 		this.referrer = referrer;

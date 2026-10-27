@@ -24,6 +24,23 @@ spring:
       timeout: ${REDIS_TIMEOUT:500ms}
       repositories:
         enabled: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      fail-fast: false
+    listener:
+      missing-topics-fatal: false
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        max.block.ms: 2000
+    consumer:
+      group-id: ${CLICK_GROUP:ziplink-clicks}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
   lifecycle:
     timeout-per-shutdown-phase: 20s
 
@@ -49,6 +66,8 @@ management:
       show-details: never
   health:
     redis:
+      enabled: false
+    kafka:
       enabled: false
   info:
     env:
@@ -82,6 +101,10 @@ ziplink:
     enabled: ${REDIS_CACHE_ENABLED:true}
     key-prefix: ${REDIS_KEY_PREFIX:ziplink:redirect:}
     ttl-seconds: ${REDIS_TTL_SECONDS:600}
+  click-events:
+    broker-enabled: ${CLICK_BROKER_ENABLED:true}
+    topic: ${CLICK_TOPIC:ziplink.clicks}
+    group: ${CLICK_GROUP:ziplink-clicks}
 
 logging:
   pattern:
