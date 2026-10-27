@@ -103,6 +103,7 @@ ziplink:
     ttl-seconds: ${REDIS_TTL_SECONDS:600}
   click-events:
     broker-enabled: ${CLICK_BROKER_ENABLED:true}
+    consumer-enabled: ${CLICK_CONSUMER_ENABLED:false}
     topic: ${CLICK_TOPIC:ziplink.clicks}
     group: ${CLICK_GROUP:ziplink-clicks}
 
