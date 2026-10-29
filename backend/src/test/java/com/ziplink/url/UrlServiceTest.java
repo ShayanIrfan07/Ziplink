@@ -3,9 +3,6 @@ package com.ziplink.url;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -72,7 +69,6 @@ class UrlServiceTest {
 				Clock.fixed(NOW, ZoneOffset.UTC),
 				new SimpleMeterRegistry(),
 				cache);
-		lenient().when(cache.find(any())).thenReturn(Optional.empty());
 	}
 
 	@Test
@@ -144,34 +140,6 @@ class UrlServiceTest {
 	}
 
 	@Test
-	void expiredLinksAreGoneAndDisabledLinksAreNotFound() {
-		ShortUrl expired = ShortUrl.create(
-				guest,
-				"https://example.com/old",
-				"expired1",
-				null,
-				NOW.minusSeconds(5),
-				NOW.minusSeconds(60));
-		when(repository.findByShortCodeIgnoreCase("expired1")).thenReturn(Optional.of(expired));
-		assertThatThrownBy(() -> service.resolve("expired1"))
-				.isInstanceOfSatisfying(ApiException.class, error ->
-						assertThat(error.status()).isEqualTo(HttpStatus.GONE));
-
-		ShortUrl disabled = ShortUrl.create(
-				guest,
-				"https://example.com/off",
-				"disabled",
-				null,
-				null,
-				NOW.minusSeconds(60));
-		disabled.changeStatus(UrlStatus.DISABLED, NOW);
-		when(repository.findByShortCodeIgnoreCase("disabled")).thenReturn(Optional.of(disabled));
-		assertThatThrownBy(() -> service.resolve("disabled"))
-				.isInstanceOfSatisfying(ApiException.class, error ->
-						assertThat(error.status()).isEqualTo(HttpStatus.NOT_FOUND));
-	}
-
-	@Test
 	void updatesDestinationAndClearsExpiration() {
 		ShortUrl existing = ShortUrl.create(
 				guest,
@@ -219,25 +187,4 @@ class UrlServiceTest {
 		assertThat(page.totalElements()).isEqualTo(1);
 	}
 
-	@Test
-	void resolveUsesACachedDestinationWithoutReadingTheDatabase() {
-		UUID id = UUID.randomUUID();
-		when(cache.find("cached1")).thenReturn(Optional.of(new RedirectTarget(id, "https://example.com/cached")));
-
-		RedirectTarget target = service.resolve("cached1");
-
-		assertThat(target.destination()).isEqualTo("https://example.com/cached");
-		verify(repository, never()).findByShortCodeIgnoreCase(any());
-	}
-
-	@Test
-	void resolveStoresAnActiveLinkAfterACacheMiss() {
-		ShortUrl url = ShortUrl.create(guest, "https://example.com/live", "live234", null, null, NOW);
-		when(repository.findByShortCodeIgnoreCase("live234")).thenReturn(Optional.of(url));
-
-		RedirectTarget target = service.resolve("live234");
-
-		assertThat(target.destination()).isEqualTo("https://example.com/live");
-		verify(cache).remember(eq("live234"), eq(target), isNull());
-	}
 }

@@ -1,0 +1,13 @@
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /src
+COPY pom.xml .
+COPY src src
+RUN mvn -B -DskipTests package
+
+FROM eclipse-temurin:21-jre-alpine
+RUN addgroup -S ziplink \
+  && adduser -S ziplink -G ziplink
+WORKDIR /app
+COPY --from=build /src/target/ziplink.jar app.jar
+USER ziplink
+ENTRYPOINT ["java", "-Dloader.main=com.ziplink.worker.ClickWorkerApplication", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]

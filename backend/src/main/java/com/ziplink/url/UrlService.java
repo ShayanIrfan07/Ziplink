@@ -3,7 +3,6 @@ package com.ziplink.url;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -210,31 +209,6 @@ public class UrlService {
 	@Transactional(readOnly = true)
 	public java.util.List<UrlResponse> recentForOwner(UUID userId) {
 		return repository.findTop5ByOwnerIdOrderByCreatedAtDesc(userId).stream().map(this::toResponse).toList();
-	}
-
-	/**
-	 * Successful redirects use 302 rather than 301. Destinations, status, and
-	 * expiration can change, and browsers cache 301 responses aggressively.
-	 */
-	@Transactional(readOnly = true)
-	public RedirectTarget resolve(String shortCode) {
-		Optional<RedirectTarget> cached = cache.find(shortCode);
-		if (cached.isPresent()) {
-			meters.counter("ziplink.redirects", "result", "success").increment();
-			return cached.get();
-		}
-		ShortUrl url = repository.findByShortCodeIgnoreCase(shortCode)
-				.orElseThrow(() -> ApiException.notFound("Link not found"));
-		if (url.getStatus() != UrlStatus.ACTIVE) {
-			throw ApiException.notFound("Link not found");
-		}
-		if (url.expired(clock.instant())) {
-			throw ApiException.gone("This link has expired");
-		}
-		RedirectTarget target = new RedirectTarget(url.getId(), url.getOriginalUrl());
-		cache.remember(url.getShortCode(), target, url.getExpiresAt());
-		meters.counter("ziplink.redirects", "result", "success").increment();
-		return target;
 	}
 
 	private void forgetAfterCommit(String shortCode) {

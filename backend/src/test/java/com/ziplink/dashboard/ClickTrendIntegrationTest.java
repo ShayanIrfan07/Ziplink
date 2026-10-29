@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,6 +24,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(properties = "ziplink.clicks-async=false")
 @AutoConfigureMockMvc
+@Import({com.ziplink.redirect.RedirectController.class, com.ziplink.url.RedirectResolver.class})
 @Testcontainers
 @ExtendWith(RequiresDocker.class)
 class ClickTrendIntegrationTest {

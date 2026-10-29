@@ -2,10 +2,15 @@ package com.ziplink.url.click;
 
 import java.time.Clock;
 import java.util.UUID;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
+@ConditionalOnProperty(
+		prefix = "ziplink.click-events",
+		name = "publisher-enabled",
+		havingValue = "true")
 public class ClickRecorder {
 
 	private final ClickDispatch dispatch;

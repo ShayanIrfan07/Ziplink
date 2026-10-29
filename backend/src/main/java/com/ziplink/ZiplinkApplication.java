@@ -15,7 +15,8 @@ import org.springframework.context.annotation.FilterType;
 		excludeFilters = {
 				@ComponentScan.Filter(type = FilterType.CUSTOM, classes = TypeExcludeFilter.class),
 				@ComponentScan.Filter(type = FilterType.CUSTOM, classes = AutoConfigurationExcludeFilter.class),
-				@ComponentScan.Filter(type = FilterType.REGEX, pattern = "com\\.ziplink\\.worker\\..*")
+				@ComponentScan.Filter(type = FilterType.REGEX, pattern = "com\\.ziplink\\.worker\\..*"),
+				@ComponentScan.Filter(type = FilterType.REGEX, pattern = "com\\.ziplink\\.redirect\\..*")
 		})
 @ConfigurationPropertiesScan
 public class ZiplinkApplication {

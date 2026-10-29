@@ -11,6 +11,10 @@ import com.ziplink.url.click.ClickStore;
 import com.ziplink.url.click.KafkaClickDispatch;
 
 @Configuration
+@ConditionalOnProperty(
+		prefix = "ziplink.click-events",
+		name = "publisher-enabled",
+		havingValue = "true")
 public class ClickEventConfig {
 
 	@Bean
